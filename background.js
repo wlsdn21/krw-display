@@ -191,7 +191,9 @@ async function checkForExtensionUpdate(force = false) {
     const storage = await chrome.storage.local.get([
         'updateLastCheckedAt',
         'updateLatestVersion',
-        'updateAvailable'
+        'updateAvailable',
+        'updateDownloadUrl',
+        'updateRepoUrl'
     ]);
 
     const now = Date.now();
@@ -234,14 +236,29 @@ async function checkForExtensionUpdate(force = false) {
             manifestUrl
         });
 
-        await chrome.storage.local.set({
+        const currentVersion = chrome.runtime.getManifest().version;
+        const storedLatestVersion = storage.updateLatestVersion || null;
+        const hasStoredUpdate = storedLatestVersion
+            ? compareVersions(storedLatestVersion, currentVersion) > 0
+            : false;
+
+        const updates = {
             updateLastCheckedAt: now,
             updateCheckError: error.message
-        });
+        };
+
+        if (!hasStoredUpdate) {
+            updates.updateAvailable = false;
+            updates.updateLatestVersion = null;
+            updates.updateDownloadUrl = null;
+            updates.updateRepoUrl = null;
+        }
+
+        await chrome.storage.local.set(updates);
 
         return {
-            hasUpdate: Boolean(storage.updateAvailable),
-            latestVersion: storage.updateLatestVersion || null
+            hasUpdate: hasStoredUpdate,
+            latestVersion: hasStoredUpdate ? storedLatestVersion : null
         };
     }
 }

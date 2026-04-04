@@ -405,7 +405,6 @@ console.log(`Execution time: ${end - start}ms`);
 
 ## 🆘 도움이 필요하신가요?
 
-- **Discord**: [커뮤니티 참여](https://discord.gg/5msPwkj2J5)
 - **이슈**: GitHub Issues로 버그 리포트 및 기능 요청
 
 ---

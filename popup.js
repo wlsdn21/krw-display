@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateBannerTitle = document.getElementById('updateBannerTitle');
     const updateBannerDescription = document.getElementById('updateBannerDescription');
     const updateBannerBtn = document.getElementById('updateBannerBtn');
+    const versionLabel = document.getElementById('versionLabel');
 
     // Custom Rate Elements
     const customRateInputContainer = document.getElementById('customRateInputContainer');
@@ -45,6 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // ... (rest of code 1) ...
 
     // Helper functions moved to PopupCore (popup-core.js)
+    if (versionLabel) {
+        versionLabel.textContent = `v${chrome.runtime.getManifest().version}`;
+    }
 
     // Update auto-refresh timer UI
     function updateRefreshTimer(rateSource, lastFetchTime) {
@@ -76,7 +80,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!result.updateAvailable || !result.updateLatestVersion || !result.updateDownloadUrl) {
+        const currentVersion = chrome.runtime.getManifest().version;
+        const hasNewerVersion = result.updateLatestVersion
+            ? compareVersions(result.updateLatestVersion, currentVersion) > 0
+            : false;
+
+        if (!result.updateAvailable || !hasNewerVersion || !result.updateLatestVersion || !result.updateDownloadUrl) {
             updateBanner.hidden = true;
             return;
         }
@@ -85,6 +94,25 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBannerDescription.textContent = '압축해제된 확장 프로그램은 자동 업데이트되지 않습니다. 최신 ZIP을 받아 다시 로드하세요.';
         updateBannerBtn.dataset.url = result.updateDownloadUrl;
         updateBanner.hidden = false;
+    }
+
+    function normalizeVersion(version) {
+        return String(version || '').trim().replace(/^v/i, '');
+    }
+
+    function compareVersions(a, b) {
+        const aParts = normalizeVersion(a).split('.').map(part => parseInt(part, 10) || 0);
+        const bParts = normalizeVersion(b).split('.').map(part => parseInt(part, 10) || 0);
+        const maxLength = Math.max(aParts.length, bParts.length);
+
+        for (let i = 0; i < maxLength; i++) {
+            const aVal = aParts[i] || 0;
+            const bVal = bParts[i] || 0;
+            if (aVal > bVal) return 1;
+            if (aVal < bVal) return -1;
+        }
+
+        return 0;
     }
 
 
@@ -133,8 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Show error message if API failed
             if (result.lastFetchError && status === 'failed') {
                 // Add subtle error indicator
-                const errorHint = ` (????怨몄뵒: ${result.lastFetchError.substring(0, 30)}...)`;
-                if (!lastUpdate.textContent.includes('????怨몄뵒')) {
+                const errorHint = ` (오류: ${result.lastFetchError.substring(0, 30)}...)`;
+                if (!lastUpdate.textContent.includes('(오류:')) {
                     lastUpdate.textContent += errorHint;
                 }
             }
@@ -291,7 +319,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Inline error helper to replace alert()
     function showInlineError(inputEl, message) {
-        // ???뚯????????????곌퇈?뗦틦?
         const existing = inputEl.parentElement.querySelector('.inline-error');
         if (existing) existing.remove();
 
@@ -301,7 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         err.textContent = message;
         inputEl.parentElement.appendChild(err);
 
-        // 3???????嶺????곌퇈?뗦틦?
+        // Clear the inline hint after a short delay.
         setTimeout(() => err.remove(), 3000);
     }
 
@@ -311,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
     saveCustomRateBtn.addEventListener('click', () => {
         const val = parseFloat(customRateInput.value);
         if (isNaN(val) || val <= 0) {
-            showInlineError(customRateInput, '????ъ군???????볥궙筌??????怨몄７????κ땁??癲ル슢????');
+            showInlineError(customRateInput, '올바른 환율 값을 입력해 주세요.');
             return;
         }
 
@@ -325,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Feedback
             const originalText = saveCustomRateBtn.textContent;
-            saveCustomRateBtn.textContent = '???逆곷틳爰덂퐲?';
+            saveCustomRateBtn.textContent = '저장 완료';
             setTimeout(() => {
                 saveCustomRateBtn.textContent = originalText;
             }, 1500);
@@ -403,8 +430,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Calculate and display Kimchi Premium
-     * ??????볥궚?? popup??????꿔꺂?????fetch ???곌퇈?뗦틦???background??醫딆쓧? ???녿뮝??怨룸렓????쇨덫嶺뚮ㅏ諭?????嚥싳쇎紐??
-     *    storage ??????됰씞嫄??????됲닓 ?熬곣뫖?삥납?????Β????⑤슢堉???     */
+     * Background script caches standard and Upbit rates in storage.
+     * The popup reads those cached values to avoid extra network requests.
+     */
     async function updatePremiumInfo() {
         try {
             const storage = await chrome.storage.local.get([
@@ -414,10 +442,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const standardRate = storage.standardRate;
             const usdkrw = storage.usdkrw;
 
-            // ??? ????볥궙筌??????ㅼ굡?類㎮뵾?????썼キ?κ괌?됰챷??嚥??ョ솾???影??낟?????곗뵯??
             if (!standardRate || !usdkrw) return;
 
-            // Upbit ??影??낟??????????????⑸윞??????썹땟?????逆곷틳爰덂퐲?usdkrw ???뚯???維◈?????썼キ?κ괌?됰챷??嚥??ョ솾???嶺?筌?
             // Prefer cached Upbit prices when available; fall back to usdkrw.
             const upbitUsdt = storage.upbitUsdt;
             const upbitUsdc = storage.upbitUsdc;
@@ -487,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 navigator.clipboard.writeText(text).then(() => {
                     // Success Feedback
                     const originalText = btn.textContent;
-                    btn.textContent = '??⑤슢?뽫뵓怨????';
+                    btn.textContent = '복사 완료';
                     btn.style.background = '#4CAF50';
                     btn.style.color = 'white';
 
@@ -607,8 +633,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (enabledSites.length === 0) {
             sitesList.innerHTML = `
                 <div class="empty-sites">
-                    <div class="empty-sites-icon">???/div>
-                    <div class="empty-sites-text">?嚥싲갭큔?댁쉩???????癲? ????ㅿ폍??????딅젩</div>
+                    <div class="empty-sites-icon">🌐</div>
+                    <div class="empty-sites-text">아직 추가된 사이트가 없습니다.</div>
                 </div>
             `;
             return;
@@ -627,7 +653,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const siteIcon = document.createElement('span');
             siteIcon.className = 'site-icon';
-            siteIcon.textContent = 'URL';
+
+            const siteIconFallback = document.createElement('span');
+            siteIconFallback.className = 'site-icon-fallback';
+            siteIconFallback.textContent = '🌐';
+
+            const siteFavicon = document.createElement('img');
+            siteFavicon.className = 'site-favicon';
+            siteFavicon.alt = '';
+            siteFavicon.loading = 'lazy';
+            siteFavicon.referrerPolicy = 'no-referrer';
+            siteFavicon.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(site)}&sz=64`;
+            siteFavicon.addEventListener('load', () => {
+                siteIcon.classList.add('has-favicon');
+            });
+            siteFavicon.addEventListener('error', () => {
+                siteFavicon.remove();
+            });
+
+            siteIcon.appendChild(siteFavicon);
+            siteIcon.appendChild(siteIconFallback);
 
             const siteName = document.createElement('span');
             siteName.className = 'site-name';
@@ -672,8 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
         site = PopupCore.validateSite(site);
 
         if (!site || site.length < 3) {
-            // ??alert() ???癲ル슢??遺셋???????
-            showInlineError(newSiteInput, '????ъ군???????癲? ????怨몄７????κ땁??癲ル슢????');
+            showInlineError(newSiteInput, '올바른 사이트 주소를 입력해 주세요.');
             return;
         }
 
@@ -681,8 +725,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const enabledSites = result.enabledSites || DEFAULT_SITES;
 
             if (enabledSites.includes(site)) {
-                // ??alert() ???癲ル슢??遺셋???????
-                showInlineError(newSiteInput, '???? ?嚥싲갭큔?댁쉩???????癲ル슢???브덩?????딅젩.');
+                showInlineError(newSiteInput, '이미 추가된 사이트입니다.');
                 return;
             }
 

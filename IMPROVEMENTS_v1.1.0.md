@@ -290,9 +290,7 @@ v1.2.0에서 적용할 예정:
 
 ## 📞 문의 및 이슈
 
-- **Discord**: [커뮤니티](https://discord.gg/5msPwkj2J5)
 - **GitHub Issues**: 버그 리포트 및 기능 요청
-- **이메일**: developer@krwmaster.local
 
 ---
 
