@@ -32,6 +32,10 @@
       // Typical currency strings are < 100 chars. 500 is a safe upper bound.
       MAX_TEXT_LENGTH: 500,
 
+      // Allow longer article/body text nodes when they contain currency hints.
+      // This avoids missing cases like "70달러" embedded inside news paragraphs.
+      MAX_CURRENCY_TEXT_LENGTH: 5000,
+
       // Limit DOM traversal depth to prevent infinite loops in deeply nested structures
       // 15 levels covers most realistic DOM structures while preventing stack overflow
       MAX_PARENT_DEPTH: 15
@@ -91,6 +95,8 @@
   // Centralized currency configuration (DRY principle)
   // ⚠️ 패턴은 문자열로 저장 → transform()에서 매번 new RegExp()로 생성
   // 이유: global(/g) regex는 lastIndex를 인스턴스에 저장하므로 재사용 시 매칭 위치가 틀려짐
+  const KOREAN_DOLLAR_POSTPOSITION_PATTERN = '(?:으로는|로는|에는|에도|으로|에서|에게|께서|까지|부터|처럼|조차|마저|밖에|이랑|이나|랑|은|는|이|가|을|를|와|과|의|에|도|만|로|나|엔)?';
+
   const CURRENCIES = {
     USD: {
       enabled: () => true, // USD is always enabled
@@ -99,10 +105,14 @@
       patterns: [
         { source: '(-?)\\$\\s?([\\d,]+(?:\.\\d+)?)\\s?([kKmMbBtT만억조](?:n|N)?)?(?:\\s*\\(₩[^)]+\\))?', flags: 'g', type: 'symbol' },
         { source: '(-?)([\\d,]+(?:\.\\d+)?)\\s?([kKmMbBtT만억조](?:n|N)?)?\\s?(USD|USDT|USDC)(?![A-Za-z])(?:\\s*\\(₩[^)]+\\))?', flags: 'gi', type: 'suffix' },
-        { source: '(-?)([\\d,]+(?:\.\\d+)?)\\s?([만억조])?\\s?(달러)(?![A-Za-z가-힣])(?:\\s*\\(₩[^)]+\\))?', flags: 'g', type: 'korean' }
+        { source: `(-?)([\\d,]+(?:\.\\d+)?)\\s?([만억조])?\\s?(달러)(?=${KOREAN_DOLLAR_POSTPOSITION_PATTERN}(?:[^A-Za-z가-힣]|$))(?:\\s*\\(₩[^)]+\\))?`, flags: 'g', type: 'korean' }
       ]
     }
   };
+
+  function hasCurrencyHint(text) {
+    return text.includes('$') || text.includes('달러') || /(USD|USDT|USDC)/i.test(text);
+  }
 
 
 
@@ -290,7 +300,13 @@
   const processNode = (node) => {
     if (node.nodeType === 3) {
       const original = node.nodeValue;
-      if (!original || original.length > CONFIG.DOM.MAX_TEXT_LENGTH) return;
+      if (!original) return;
+
+      if (original.length > CONFIG.DOM.MAX_TEXT_LENGTH) {
+        if (!hasCurrencyHint(original) || original.length > CONFIG.DOM.MAX_CURRENCY_TEXT_LENGTH) {
+          return;
+        }
+      }
 
       // Skip if inside editable elements
       if (isInEditableElement(node)) {

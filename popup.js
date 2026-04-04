@@ -23,6 +23,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateBannerBtn = document.getElementById('updateBannerBtn');
     const versionLabel = document.getElementById('versionLabel');
 
+    if (updateBanner) {
+        updateBanner.hidden = true;
+        updateBanner.style.display = 'none';
+    }
+
     // Custom Rate Elements
     const customRateInputContainer = document.getElementById('customRateInputContainer');
     const customRateInput = document.getElementById('customRateInput');
@@ -87,6 +92,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!result.updateAvailable || !hasNewerVersion || !result.updateLatestVersion || !result.updateDownloadUrl) {
             updateBanner.hidden = true;
+            updateBanner.style.display = 'none';
+            delete updateBannerBtn.dataset.url;
             return;
         }
 
@@ -94,6 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateBannerDescription.textContent = '압축해제된 확장 프로그램은 자동 업데이트되지 않습니다. 최신 ZIP을 받아 다시 로드하세요.';
         updateBannerBtn.dataset.url = result.updateDownloadUrl;
         updateBanner.hidden = false;
+        updateBanner.style.display = 'flex';
     }
 
     function normalizeVersion(version) {
@@ -474,7 +482,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial Data Load
     loadData();
     updatePremiumInfo(); // Call this too
-    chrome.runtime.sendMessage({ action: 'checkForUpdates' });
+    chrome.runtime.sendMessage({ action: 'checkForUpdates', force: true }, () => {
+        loadData();
+    });
 
     // ==================== TABS & COPY LOGIC ====================
 
