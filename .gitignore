@@ -1,0 +1,33 @@
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temp files
+*.tmp
+*.log
+*.bak
+
+# Build artifacts (if any in future)
+dist/
+build/
+output/
+
+# Node modules (if added in future)
+node_modules/
+package-lock.json
+
+# Chrome extension build
+*.crx
+*.pem
+*.zip
+
+# System files
+$RECYCLE.BIN/

@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KRW Master Pro</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <div class="brand-mark">₩</div>
+        <div class="brand-copy">
+          <div class="brand-eyebrow">KRW Master Utility</div>
+          <h1>원화표시기</h1>
+        </div>
+      </div>
+      <div class="header-right">
+        <a href="#" id="popOutBtn" class="discord-btn utility-btn" title="새 창으로 띄우기">
+          <span class="utility-icon">⇱</span>
+        </a>
+        <a href="https://discord.gg/5msPwkj2J5" target="_blank" class="discord-btn" title="Discord 커뮤니티">
+          <img src="images/icon_discord.png" alt="Discord">
+        </a>
+        <div class="version">v1.3.6</div>
+      </div>
+    </div>
+
+    <!-- Tabs Navigation -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="tab-home">홈</button>
+      <button class="tab-btn" data-tab="tab-sites">사이트</button>
+      <button class="tab-btn" data-tab="tab-donate">후원</button>
+    </div>
+
+    <!-- TAB 1: HOME -->
+    <div id="tab-home" class="tab-content active">
+      <div class="update-banner" id="updateBanner" hidden>
+        <div class="update-banner-copy">
+          <span class="update-banner-kicker">업데이트 안내</span>
+          <strong id="updateBannerTitle">새 버전이 있습니다.</strong>
+          <p id="updateBannerDescription">압축해제된 확장 프로그램은 자동 업데이트되지 않습니다.</p>
+        </div>
+        <button type="button" class="update-banner-btn" id="updateBannerBtn">최신 ZIP 받기</button>
+      </div>
+
+      <!-- Exchange Rate Display -->
+      <div class="rate-card">
+        <div class="rate-label">현재 환율</div>
+        <div class="rate-display-row">
+          <div class="rate-value" id="rateValue">불러오는 중...</div>
+          <button class="rate-source-toggle" id="rateSourceToggle">
+            <span class="arrow-icon">›</span>
+          </button>
+        </div>
+
+        <!-- Expandable Rate Source Options -->
+        <div class="rate-source-options" id="rateSourceOptions">
+          <div class="rate-source-option" data-source="usd_krw">
+            <span class="option-icon">🌐</span>
+            <div class="option-info">
+              <div class="option-name">국제 환율 (USD/KRW)</div>
+              <div class="option-desc">실제 데이터와 근소한 차이가 발생할 수 있음</div>
+            </div>
+            <span class="check-icon">✓</span>
+          </div>
+          <div class="rate-source-option" data-source="upbit_usdt">
+            <img src="images/upbit_logo.png" class="option-icon-img" alt="Upbit">
+            <div class="option-info">
+              <div class="option-name">업비트 USDT</div>
+              <div class="option-desc">김치 프리미엄 반영</div>
+            </div>
+            <span class="check-icon">✓</span>
+          </div>
+          <div class="rate-source-option" data-source="upbit_usdc">
+            <img src="images/upbit_logo.png" class="option-icon-img" alt="Upbit">
+            <div class="option-info">
+              <div class="option-name">업비트 USDC</div>
+              <div class="option-desc">업비트 USDC 시세</div>
+            </div>
+            <span class="check-icon">✓</span>
+          </div>
+          <div class="rate-source-option" data-source="custom">
+            <span class="option-icon">✏️</span>
+            <div class="option-info">
+              <div class="option-name">사용자 지정</div>
+              <div class="option-desc">원하는 환율 직접 입력</div>
+            </div>
+            <span class="check-icon">✓</span>
+          </div>
+        </div>
+
+        <!-- Custom Rate Input (Hidden by default) -->
+        <div class="custom-rate-input-container" id="customRateInputContainer" style="display: none;">
+          <input type="number" id="customRateInput" placeholder="환율 입력 (예: 1400)" />
+          <button id="saveCustomRateBtn">저장</button>
+        </div>
+
+        <div class="rate-info">
+          <span class="status-indicator" id="statusIndicator">●</span>
+          <span id="lastUpdate">업데이트 중...</span>
+        </div>
+        <div class="auto-refresh-info">
+          <span class="refresh-icon">↻</span>
+          <span id="autoRefreshTimer">자동 갱신 중...</span>
+        </div>
+      </div>
+
+      <!-- Settings -->
+      <div class="settings-section">
+        <div class="section-heading">
+          <span class="section-kicker">Control</span>
+          <h2>설정</h2>
+        </div>
+
+        <!-- Enable/Disable Toggle -->
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>환율 변환</span>
+            <span class="setting-desc">USD/USDT/USDC → KRW 자동 변환</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="enableToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <!-- Billion Unit Toggle -->
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>억 단위 표시</span>
+            <span class="setting-desc">1억 이상 금액을 억 단위로 표시</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="billionToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <!-- Trillion Unit Toggle -->
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>조 단위 표시</span>
+            <span class="setting-desc">1조 이상 금액을 조 단위로 표시</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="trillionToggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <!-- Decimal Places -->
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>소수점 자릿수</span>
+            <span class="setting-desc">억 단위 표시 시 소수점 자릿수</span>
+          </div>
+          <select id="decimalSelect" class="decimal-select">
+            <option value="0">0자리</option>
+            <option value="1">1자리</option>
+            <option value="2" selected>2자리</option>
+            <option value="3">3자리</option>
+            <option value="4">4자리</option>
+          </select>
+        </div>
+
+      </div>
+
+      <div class="footer-link-area">
+        <small class="developer-credit">
+          Developed by <span class="developer-name">JIN</span>
+        </small>
+        <p class="disclaimer-text">
+          본 프로그램에서 제공하는 정보는 참고용이며, 실제 시장 시세와 차이가 있을 수 있습니다.
+          개발자는 본 프로그램의 이용으로 인해 발생한 어떠한 손해에 대해서도 법적 책임을 지지 않습니다.
+        </p>
+      </div>
+    </div>
+
+
+    <!-- TAB 2: SITES -->
+    <div id="tab-sites" class="tab-content">
+      <div class="settings-section">
+        <div class="section-heading">
+          <span class="section-kicker">Coverage</span>
+          <h2>활성화된 사이트</h2>
+        </div>
+        <p class="section-note">
+          원화 변환을 적용할 사이트를 관리하세요
+        </p>
+
+        <!-- Site Mode Selector -->
+        <div class="site-mode-selector">
+          <label class="mode-option">
+            <input type="radio" name="siteMode" value="whitelist" id="mode-whitelist" checked>
+            <span class="mode-label">
+              <span class="mode-icon">📋</span>
+              <span class="mode-text">선택한 사이트만</span>
+            </span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="siteMode" value="all" id="mode-all">
+            <span class="mode-label">
+              <span class="mode-icon">🌐</span>
+              <span class="mode-text">모든 사이트</span>
+            </span>
+          </label>
+        </div>
+
+        <!-- Sites Container -->
+        <div id="sitesListContainer">
+
+          <!-- Sites List -->
+          <div id="sitesList" class="sites-list">
+            <!-- Will be populated by JS -->
+          </div>
+
+          <!-- Add Site -->
+          <div class="add-site-container">
+            <input type="text" id="newSiteInput" class="site-input" placeholder="예: deribit.com" />
+            <button id="addSiteBtn" class="site-add-btn">
+              추가
+            </button>
+          </div>
+        </div> <!-- End sitesListContainer -->
+      </div> <!-- End settings-section -->
+    </div> <!-- End tab-sites -->
+
+    <!-- TAB 3: DONATE -->
+    <div id="tab-donate" class="tab-content">
+      <div class="donate-card">
+        <p class="donate-msg">
+          개발자에게 커피 한 잔 선물하기 ☕<br>
+          더 좋은 기능을 만드는 데 큰 힘이 됩니다!
+        </p>
+
+        <!-- 1. USDC (Arbitrum) -->
+        <div class="wallet-item">
+          <div class="wallet-label">USDC (Arbitrum)</div>
+          <div class="wallet-addr-box">
+            <span class="wallet-addr" id="addr-arb">0x0d2088475D6e3A88cB808bF72381Cb2428F513fa</span>
+            <button class="qr-btn" data-qr-target="qr-arb">QR</button>
+            <button class="copy-btn" data-clipboard-target="#addr-arb">복사</button>
+          </div>
+          <div class="qr-display" id="qr-arb" style="display: none;">
+            <img src="images/qr_arb.png" alt="Arbitrum QR Code">
+          </div>
+        </div>
+
+        <!-- 2. USDT (TRC20) -->
+        <div class="wallet-item">
+          <div class="wallet-label">USDT (TRC20)</div>
+          <div class="wallet-addr-box">
+            <span class="wallet-addr" id="addr-trc20">TL1NWFTMcSAJHjiaP139PfaoSGCsc8aqWh</span>
+            <button class="qr-btn" data-qr-target="qr-trc20">QR</button>
+            <button class="copy-btn" data-clipboard-target="#addr-trc20">복사</button>
+          </div>
+          <div class="qr-display" id="qr-trc20" style="display: none;">
+            <img src="images/qr_trc20.png" alt="TRC20 QR Code">
+          </div>
+        </div>
+
+        <!-- 3. USDT (BEP20) -->
+        <div class="wallet-item">
+          <div class="wallet-label">USDT (BEP20)</div>
+          <div class="wallet-addr-box">
+            <span class="wallet-addr" id="addr-bep20">0x0d2088475D6e3A88cB808bF72381Cb2428F513fa</span>
+            <button class="qr-btn" data-qr-target="qr-bep20">QR</button>
+            <button class="copy-btn" data-clipboard-target="#addr-bep20">복사</button>
+          </div>
+          <div class="qr-display" id="qr-bep20" style="display: none;">
+            <img src="images/qr_bep20.png" alt="BEP20 QR Code">
+          </div>
+        </div>
+
+        <!-- 4. ETH (ERC20) -->
+        <div class="wallet-item">
+          <div class="wallet-label">ETH (ERC20)</div>
+          <div class="wallet-addr-box">
+            <span class="wallet-addr" id="addr-eth">0x0d2088475D6e3A88cB808bF72381Cb2428F513fa</span>
+            <button class="qr-btn" data-qr-target="qr-erc20">QR</button>
+            <button class="copy-btn" data-clipboard-target="#addr-eth">복사</button>
+          </div>
+          <div class="qr-display" id="qr-erc20" style="display: none;">
+            <img src="images/qr_erc20.png" alt="ERC20 QR Code">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup-core.js"></script>
+  <script src="popup.js"></script>
+</body>
+
+</html>
