@@ -12,9 +12,9 @@
   const FINANCIAL_VALUE_RE = /^(-?)([\d,]+(?:\.\d+)?)\s*(USDT|USDC|USD)$/i;
   const financialNodes = new Set();
   const financialState = new WeakMap();
-  let enabled = true;
-  let currencyEnabled = true;
-  let usdKrw = 1300;
+  let enabled = false;
+  let currencyEnabled = false;
+  let usdKrw = null;
   let observer = null;
   let frameRequested = false;
   let pendingRoots = new Set();
@@ -412,6 +412,10 @@
   }
 
   function flush() {
+    // Binance frequently replaces panels; detached translations must not retain them.
+    for (const nodes of [translatedNodes, translatedElements, financialNodes]) {
+      for (const node of nodes) if (!node.isConnected) nodes.delete(node);
+    }
     frameRequested = false;
     const roots = pendingRoots;
     pendingRoots = new Set();
@@ -455,7 +459,7 @@
       // through a React render, a failed scan can then recover on the next DOM
       // commit instead of leaving the extension permanently inactive.
       observer = new MutationObserver((mutations) => {
-        if (!enabled) return;
+        if (!enabled && !currencyEnabled) return;
         for (const mutation of mutations) {
           if (mutation.type === "characterData") schedule(mutation.target);
           if (mutation.type === "attributes") schedule(mutation.target);
@@ -501,17 +505,19 @@
 
   function applySetting(value) {
     enabled = value !== false;
+    if (!enabled) restoreEnglish();
     if (enabled || currencyEnabled) start();
     else stop();
   }
 
   function refreshFinancialSettings() {
-    chrome.storage.local.get(["isEnabled", "krwOrderHelperEnabled", "usdkrw"], (result) => {
+    chrome.storage.local.get(["isEnabled", "krwOrderHelperEnabled", "usdkrw", SETTING_KEY], (result) => {
       // Keep the Binance account metrics useful when the general page-text
       // converter is off but the Binance KRW helper is still enabled.
-      currencyEnabled = result.isEnabled !== false || result.krwOrderHelperEnabled !== false;
-      const nextRate = Number(result.usdkrw);
-      if (Number.isFinite(nextRate) && nextRate >= 500 && nextRate <= 2500) usdKrw = nextRate;
+      usdKrw = KrwCommon.isValidRate(result.usdkrw) ? result.usdkrw : null;
+      currencyEnabled = usdKrw !== null && (result.isEnabled !== false || result.krwOrderHelperEnabled !== false);
+      if (!currencyEnabled) restoreFinancialAnnotations();
+      applySetting(result[SETTING_KEY]);
 
       if (enabled || currencyEnabled) {
         start();
@@ -523,14 +529,8 @@
     });
   }
 
-  // Start with safe defaults immediately. Storage may be delayed while the
-  // Binance app is booting; waiting for it makes the extension look missing.
-  applySetting(true);
+  // Read saved preferences before translating or annotating the page.
   refreshFinancialSettings();
-  chrome.storage.local.get([SETTING_KEY], (result) => {
-    applySetting(result[SETTING_KEY]);
-    refreshFinancialSettings();
-  });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;

@@ -22,7 +22,6 @@ output/
 
 # Node modules (if added in future)
 node_modules/
-package-lock.json
 
 # Chrome extension build
 *.crx
@@ -31,3 +30,6 @@ package-lock.json
 
 # System files
 $RECYCLE.BIN/
+
+# Browser test output
+test-results/

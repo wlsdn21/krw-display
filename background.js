@@ -2,7 +2,7 @@
 
 "use strict";
 
-importScripts('logger.js');
+importScripts('shared.js', 'logger.js');
 
 
 const FX_APIS = [
@@ -20,7 +20,6 @@ const RATE_SOURCE = {
     CUSTOM: 'custom'
 };
 
-const DEFAULT_RATE = 1300;
 const UPDATE_CHECK_INTERVAL_MINUTES = 360; // 6 hours
 const UPDATE_SOURCE = {
     owner: 'wlsdn21',
@@ -28,14 +27,28 @@ const UPDATE_SOURCE = {
     branch: 'main'
 };
 
-// Different refresh intervals for different rate sources
-const REFRESH_INTERVALS = {
-    USD_KRW: 30 * 1000,           // 30 seconds
-    UPBIT_USDT: 30 * 1000,         // 30 seconds
-    UPBIT_USDC: 30 * 1000,          // 30 seconds
-    CUSTOM: 0                      // No auto refresh for custom
-};
+const RATE_FETCH_TIMEOUT_MS = 6_000;
+const rateRequests = new Map();
+let rateSelectionRevision = 0;
 
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.rateSource || changes.customRateValue)) {
+        rateSelectionRevision++;
+        fetchExchangeRate(true);
+    }
+});
+
+async function fetchJson(url, options = {}) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), RATE_FETCH_TIMEOUT_MS);
+    try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+    } finally {
+        clearTimeout(timeout);
+    }
+}
 
 const ALARM_NAME = "fetchExchangeRate";
 const UPDATE_CHECK_ALARM_NAME = "checkExtensionUpdate";
@@ -50,7 +63,7 @@ chrome.runtime.onInstalled.addListener(() => {
     // Set default preferences
     // Check and set default preferences only if they don't exist
     chrome.storage.local.get([
-        'isEnabled', 'binanceKoreanEnabled', 'krwOrderHelperEnabled', 'showBillionUnit', 'decimalPlaces', 'rateSource', 'usdkrw', 'lastFetchTime'
+        'isEnabled', 'binanceKoreanEnabled', 'krwOrderHelperEnabled', 'showBillionUnit', 'showTrillionUnit', 'decimalPlaces'
     ], (result) => {
         const updates = {};
         let needsUpdate = false;
@@ -76,20 +89,11 @@ chrome.runtime.onInstalled.addListener(() => {
             needsUpdate = true;
         }
 
-        // Initialize optional values if needed
-
-        if (result.lastFetchTime === undefined) {
-            // Optional: reset if missing, but better to leave it alone or set 0 to force fetch just once
-            // updates.lastFetchTime = 0; 
-            // needsUpdate = true;
+        if (result.showTrillionUnit === undefined) {
+            updates.showTrillionUnit = true;
+            needsUpdate = true;
         }
-
-        if (needsUpdate) {
-
-            chrome.storage.local.set(updates);
-        } else {
-
-        }
+        if (needsUpdate) chrome.storage.local.set(updates);
     });
 
     // Fetch rate immediately
@@ -150,8 +154,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     if (request.action === "refreshRate") {
-        fetchExchangeRate().then(rate => {
-            sendResponse({ success: true, rate });
+        fetchExchangeRate(Boolean(request.force)).then(async rate => {
+            const state = await chrome.storage.local.get(['lastFetchStatus', 'lastFetchError']);
+            sendResponse({ success: state.lastFetchStatus === 'success', rate, error: state.lastFetchError });
         }).catch(error => {
             sendResponse({ success: false, error: error.message });
         });
@@ -163,7 +168,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             'usdkrw', 'lastFetchTime', 'lastFetchStatus', 'standardRate'
         ], (result) => {
             sendResponse({
-                rate: result.usdkrw || DEFAULT_RATE,
+                rate: KrwCommon.isValidRate(result.usdkrw) ? result.usdkrw : null,
                 lastUpdate: result.lastFetchTime,
                 status: result.lastFetchStatus || 'unknown',
                 // ✅ popup의 김치 프리미엄 계산에 필요한 standardRate 포함
@@ -264,12 +269,7 @@ async function checkForExtensionUpdate(force = false) {
     const { manifestUrl, repoUrl, downloadUrl } = getUpdateUrls();
 
     try {
-        const response = await fetch(manifestUrl, { cache: 'no-store' });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const remoteManifest = await response.json();
+        const remoteManifest = await fetchJson(manifestUrl, { cache: 'no-store' });
         const latestVersion = normalizeVersion(remoteManifest.version);
         const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
 
@@ -316,17 +316,13 @@ async function checkForExtensionUpdate(force = false) {
 
 async function fetchMananaRate() {
 
-    const response = await fetch(MANANA_API);
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data = await fetchJson(MANANA_API);
     // Data format: [{"date":"...","name":"KRWUSD=X","rate":0.000678...,"timestamp":"..."}]
-    if (Array.isArray(data) && data.length > 0 && data[0].rate) {
+    if (Array.isArray(data) && KrwCommon.isValidRate(data[0]?.rate)) {
         // The API returns KRW/USD rate (approx 0.00067), so we invert it to get USD/KRW
         const rate = 1 / data[0].rate;
 
+        if (!KrwCommon.isValidRate(rate)) throw new Error('Invalid Manana rate data');
         return rate;
     } else {
         throw new Error('Invalid Manana rate data');
@@ -335,15 +331,11 @@ async function fetchMananaRate() {
 
 
 async function fetchUpbitRate(market) {
-    const response = await fetch(UPBIT_API, { cache: 'no-store' });
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data = await fetchJson(UPBIT_API, { cache: 'no-store' });
+    if (!Array.isArray(data)) throw new Error('Invalid Upbit rate data');
     const ticker = data.find(t => t.market === market);
 
-    if (ticker && ticker.trade_price && typeof ticker.trade_price === 'number' && ticker.trade_price > 0) {
+    if (KrwCommon.isValidRate(ticker?.trade_price)) {
         return ticker.trade_price;
     } else {
         throw new Error('Invalid Upbit rate data');
@@ -360,15 +352,10 @@ async function fetchUsdKrwRate(startIndex = 0) {
         try {
 
 
-            const response = await fetch(apiUrl);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const data = await response.json();
+            const data = await fetchJson(apiUrl);
             const rate = data?.rates?.KRW;
 
-            if (rate && typeof rate === 'number' && rate > 0) {
+            if (KrwCommon.isValidRate(rate)) {
 
 
                 await chrome.storage.local.set({
@@ -393,165 +380,99 @@ async function fetchUsdKrwRate(startIndex = 0) {
 
 
 
-async function fetchExchangeRate() {
-
-
+async function fetchExchangeRate(force = false) {
+    const revision = rateSelectionRevision;
     const storage = await chrome.storage.local.get([
-        'rateSource',
-        'currentApiIndex',
-        'usdkrw',
-        'lastFetchTime',
-        'customRateValue',
-        'standardRate',
-        'lastStandardFetch'
+        'rateSource', 'currentApiIndex', 'usdkrw', 'lastFetchTime', 'lastFetchStatus',
+        'lastFetchSource', 'lastFetchAttemptTime', 'customRateValue', 'standardRate', 'lastStandardFetch'
     ]);
-    const rateSource = storage.rateSource || RATE_SOURCE.USD_KRW;
-    const startIndex = storage.currentApiIndex || 0;
-    const lastFetchTime = storage.lastFetchTime || 0;
+    const rateSource = Object.values(RATE_SOURCE).includes(storage.rateSource)
+        ? storage.rateSource : RATE_SOURCE.USD_KRW;
+    const key = `${revision}:${rateSource}:${storage.customRateValue}`;
+    if (rateRequests.has(key)) return rateRequests.get(key);
 
-    // Check if enough time has passed based on rate source
-    // Skip time check if this is the first fetch (lastFetchTime is 0 or undefined)
-    const refreshInterval = REFRESH_INTERVALS[rateSource] || REFRESH_INTERVALS.USD_KRW;
-    const timeSinceLastFetch = Date.now() - lastFetchTime;
-
-    if (lastFetchTime > 0 && timeSinceLastFetch < refreshInterval) {
-        const remainingTime = Math.ceil((refreshInterval - timeSinceLastFetch) / 1000 / 60);
-
-        return storage.usdkrw || DEFAULT_RATE;
+    const request = refreshSelectedRate(storage, rateSource, revision, force);
+    rateRequests.set(key, request);
+    try {
+        return await request;
+    } finally {
+        rateRequests.delete(key);
     }
+}
+
+async function refreshSelectedRate(storage, rateSource, revision, force) {
+    const lastSource = storage.lastFetchSource || rateSource;
+    const cachedRate = KrwCommon.isValidRate(storage.usdkrw) ? storage.usdkrw : null;
+    const lastAttempt = storage.lastFetchAttemptTime || storage.lastFetchTime || 0;
+    if (!force && rateSource === RATE_SOURCE.CUSTOM && lastSource === rateSource &&
+        cachedRate === storage.customRateValue && storage.lastFetchStatus === 'success') return cachedRate;
+    // Alarms may arrive slightly before the previous request's stored start time.
+    if (!force && storage.lastFetchStatus !== 'loading' && cachedRate && lastSource === rateSource && Date.now() - lastAttempt < KrwCommon.REFRESH_INTERVAL_MS - 1000) {
+        return cachedRate;
+    }
+
+    // A response for a previously selected source must never replace a newer selection.
+    const publish = async updates => {
+        const current = await chrome.storage.local.get(['rateSource', 'customRateValue']);
+        if (revision !== rateSelectionRevision || (current.rateSource || RATE_SOURCE.USD_KRW) !== rateSource) return false;
+        if (rateSource === RATE_SOURCE.CUSTOM && current.customRateValue !== storage.customRateValue) return false;
+        await chrome.storage.local.set(updates);
+        return true;
+    };
+
+    if (!await publish({
+        lastFetchStatus: 'loading',
+        lastFetchAttemptTime: Date.now(),
+        lastFetchSource: cachedRate ? lastSource : null,
+        lastFetchError: null
+    })) return cachedRate;
 
     try {
         let rate;
-        let sourceLabel;
-        let standardRate = storage.standardRate; // Existing standard rate
-
-        // Helper to fetch standard rate if needed
-        const updateStandardRate = async () => {
-            try {
-                const sRate = await fetchMananaRate();
-                standardRate = sRate;
-                await chrome.storage.local.set({ standardRate: sRate, lastStandardFetch: Date.now() });
-
-            } catch (e) {
-                Logger.warn('updateStandardRate', 'Failed to update standard rate', {
-                    error: e.message
-                });
-            }
-        };
-
-        // If standard rate is missing or old (>1 hour), force update it (asynchronously)
-        if (!standardRate || (Date.now() - (storage.lastStandardFetch || 0) > 60 * 60 * 1000)) {
-            updateStandardRate();
-        }
-
+        const updates = {};
         switch (rateSource) {
             case RATE_SOURCE.CUSTOM:
-
-                rate = storage.customRateValue || DEFAULT_RATE;
-                sourceLabel = 'Custom Value';
-                // Custom rate doesn't need API fetch
+                rate = storage.customRateValue;
                 break;
-
             case RATE_SOURCE.UPBIT_USDT:
-
                 rate = await fetchUpbitRate('KRW-USDT');
-                sourceLabel = 'Upbit USDT';
-                // Also update standard rate if we can, to show accurate premium
-                if (!standardRate) await updateStandardRate();
-                // ✅ 실시간 업비트 시세를 storage에 캐시 → popup이 fetch 없이 읽음
-                await chrome.storage.local.set({ upbitUsdt: rate });
+                updates.upbitUsdt = rate;
                 break;
-
             case RATE_SOURCE.UPBIT_USDC:
-
                 rate = await fetchUpbitRate('KRW-USDC');
-                sourceLabel = 'Upbit USDC';
-                if (!standardRate) await updateStandardRate();
-                // ✅ 실시간 업비트 시세를 storage에 캐시 → popup이 fetch 없이 읽음
-                await chrome.storage.local.set({ upbitUsdc: rate });
+                updates.upbitUsdc = rate;
                 break;
-
-            case RATE_SOURCE.USD_KRW:
             default:
-
-
-                // Try Manana (Real-time) first
                 try {
                     rate = await fetchMananaRate();
-                    sourceLabel = 'USD/KRW (Real-time)';
-                    // This IS the standard rate
-                    standardRate = rate;
-                    await chrome.storage.local.set({ standardRate: rate, lastStandardFetch: Date.now() });
-                } catch (e) {
-                    Logger.warn('fetchExchangeRate', 'Manana API failed, falling back to standard APIs', {
-                        error: e.message,
-                        fallbackApis: FX_APIS
-                    });
-                    // Fallback to standard APIs
-                    rate = await fetchUsdKrwRate(startIndex);
-                    sourceLabel = 'USD/KRW (Standard)';
-                    standardRate = rate;
-                    await chrome.storage.local.set({ standardRate: rate, lastStandardFetch: Date.now() });
+                } catch (error) {
+                    Logger.warn('fetchExchangeRate', 'Manana API failed, trying the configured fallback APIs', { error: error.message });
+                    rate = await fetchUsdKrwRate(storage.currentApiIndex || 0);
                 }
-                break;
+                updates.standardRate = rate;
+                updates.lastStandardFetch = Date.now();
         }
-
-        await chrome.storage.local.set({
+        if (!KrwCommon.isValidRate(rate)) throw new Error('Invalid exchange rate');
+        const published = await publish({
+            ...updates,
             usdkrw: rate,
             lastFetchTime: Date.now(),
-            lastFetchStatus: 'success'
+            lastFetchSource: rateSource,
+            lastFetchStatus: 'success',
+            lastFetchError: null
         });
-
-        return rate;
-
-
-    } catch (error) {
-        Logger.error('fetchExchangeRate', `Failed to fetch rate for ${rateSource}`, {
-            rateSource,
-            error: error.message,
-            lastFetchTime: storage.lastFetchTime
-        });
-
-        // Fallback strategy
-        if (rateSource !== RATE_SOURCE.USD_KRW) {
-            Logger.warn('fetchExchangeRate', 'Upbit API failed, trying USD/KRW fallback', {
-                originalRateSource: rateSource
-            });
-
-            try {
-                const rate = await fetchUsdKrwRate(startIndex);
-
-
-                await chrome.storage.local.set({
-                    usdkrw: rate,
-                    lastFetchTime: Date.now(),
-                    lastFetchStatus: 'success',
-                    lastFetchError: null  // Clear error on success
-                });
-
-                return rate;
-            } catch (fallbackError) {
-                Logger.error('fetchExchangeRate', 'Fallback to USD/KRW also failed', {
-                    originalRateSource: rateSource,
-                    fallbackError: fallbackError.message
-                });
-            }
+        if (published && rateSource.startsWith('upbit_') &&
+            (!storage.standardRate || Date.now() - (storage.lastStandardFetch || 0) > 3_600_000)) {
+            // Premium data is optional and must not delay the selected exchange rate.
+            fetchMananaRate().then(standardRate => chrome.storage.local.set({
+                standardRate, lastStandardFetch: Date.now()
+            })).catch(error => Logger.warn('standardRate', 'Could not update premium reference', { error: error.message }));
         }
-
-        // Ultimate fallback - use cached or default rate
-        const fallbackRate = storage.usdkrw || DEFAULT_RATE;
-        Logger.error('fetchExchangeRate', 'All APIs failed, using fallback rate', {
-            fallbackType: storage.usdkrw ? 'cached' : 'default',
-            fallbackRate,
-            originalError: error.message
-        });
-
-        await chrome.storage.local.set({
-            lastFetchTime: Date.now(),
-            lastFetchStatus: 'failed',
-            lastFetchError: error.message  // Save error message
-        });
-
-        return fallbackRate;
+        return published ? rate : cachedRate;
+    } catch (error) {
+        Logger.warn('fetchExchangeRate', 'Could not refresh the selected exchange rate', { rateSource, error: error.message });
+        // Keep the last successful quote and its timestamp/source. An error is not a fresh quote.
+        await publish({ lastFetchStatus: 'failed', lastFetchError: error.message });
+        return cachedRate;
     }
 }

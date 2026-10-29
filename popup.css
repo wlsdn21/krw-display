@@ -1595,3 +1595,41 @@ input:checked + .slider {
   color: var(--text-main);
   box-shadow: none;
 }
+
+/* Compact, keyboard-accessible controls and a rate value that fits the popup. */
+[hidden] { display: none !important; }
+body { width: 390px; min-width: 320px; }
+button, input, select { font: inherit; }
+button { color: inherit; }
+button:disabled, select:disabled { opacity: 0.5; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent-a);
+  outline-offset: 3px;
+}
+.toggle input:focus-visible + .slider,
+.mode-option input:focus-visible + .mode-label {
+  outline: 2px solid var(--accent-a);
+  outline-offset: 3px;
+}
+.rate-card-heading { position: relative; display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 14px; }
+.rate-card-heading .rate-label { margin: 0; font-size: 11px; letter-spacing: 0.02em; }
+.refresh-rate-btn { border: 1px solid var(--border-soft); border-radius: 8px; padding: 6px 9px; background: var(--bg-soft); color: var(--accent-a); font-size: 11px; cursor: pointer; }
+.rate-value { min-width: 0; font-size: 34px; line-height: 1.2; letter-spacing: -0.04em; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.rate-display-row { align-items: center; margin-bottom: 6px; }
+.rate-source-label { position: relative; color: var(--text-secondary); font-size: 12px; margin-bottom: 16px; line-height: 1.5; }
+.rate-source-option { width: 100%; text-align: left; font-family: inherit; cursor: pointer; }
+.rate-source-options.expanded { max-height: none; }
+.option-info { display: block; min-width: 0; }
+.option-name, .option-desc { display: block; }
+.rate-feedback { position: relative; margin: 0 0 12px; color: var(--warning); font-size: 12px; line-height: 1.6; word-break: keep-all; }
+.auto-refresh-info .refresh-icon { animation: none; }
+.auto-refresh-info .refresh-icon.is-refreshing { animation: spin 2s linear infinite; }
+.custom-rate-input-container, .add-site-container { flex-wrap: wrap; }
+#customRateInput, .site-input { min-width: 0; }
+.inline-error { flex-basis: 100%; color: var(--danger); font-size: 12px; line-height: 1.5; }
+.site-name { min-width: 0; overflow-wrap: anywhere; }
+.remove-site-btn { flex-shrink: 0; }
+.feedback-toast { position: fixed; z-index: 10; bottom: 16px; left: 18px; right: 18px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: #102833; color: var(--text-main); font-size: 12px; line-height: 1.5; box-shadow: var(--shadow-md); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

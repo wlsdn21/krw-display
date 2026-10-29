@@ -2,13 +2,14 @@
   "manifest_version": 3,
   "name": "원화표시기",
   "description": "웹상의 USD / USDT / USDC 가격을 실시간 원화(KRW)로 자연스럽게 병기",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "content_scripts": [
     {
       "matches": [
         "<all_urls>"
       ],
       "js": [
+        "shared.js",
         "logger.js",
         "content.js"
       ],
