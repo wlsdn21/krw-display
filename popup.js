@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusIndicator = document.getElementById('statusIndicator');
     const autoRefreshTimer = document.getElementById('autoRefreshTimer');
     const enableToggle = document.getElementById('enableToggle');
+    const binanceKoreanToggle = document.getElementById('binanceKoreanToggle');
+    const krwOrderHelperToggle = document.getElementById('krwOrderHelperToggle');
     const billionToggle = document.getElementById('billionToggle');
     const trillionToggle = document.getElementById('trillionToggle');
     const decimalSelect = document.getElementById('decimalSelect');
@@ -135,6 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'lastFetchStatus',
             'lastFetchError',  // Add error message
             'isEnabled',
+            'binanceKoreanEnabled',
+            'krwOrderHelperEnabled',
             'showBillionUnit',
             'showTrillionUnit',
             'decimalPlaces',
@@ -177,6 +181,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Update settings UI
             enableToggle.checked = result.isEnabled !== undefined ? result.isEnabled : true;
+            binanceKoreanToggle.checked = result.binanceKoreanEnabled !== undefined ? result.binanceKoreanEnabled : true;
+            krwOrderHelperToggle.checked = result.krwOrderHelperEnabled !== undefined ? result.krwOrderHelperEnabled : true;
             billionToggle.checked = result.showBillionUnit !== undefined ? result.showBillionUnit : true;
             trillionToggle.checked = result.showTrillionUnit !== undefined ? result.showTrillionUnit : true;
             decimalSelect.value = result.decimalPlaces !== undefined ? result.decimalPlaces : 2;
@@ -230,6 +236,23 @@ document.addEventListener('DOMContentLoaded', () => {
     enableToggle.addEventListener('change', (e) => {
         const isEnabled = e.target.checked;
         chrome.storage.local.set({ isEnabled }, () => {
+            reloadCurrentTab();
+        });
+    });
+
+    /**
+     * Translate Binance UI independently from the KRW conversion toggle.
+     */
+    binanceKoreanToggle.addEventListener('change', (e) => {
+        const binanceKoreanEnabled = e.target.checked;
+        chrome.storage.local.set({ binanceKoreanEnabled }, () => {
+            reloadCurrentTab();
+        });
+    });
+
+    krwOrderHelperToggle.addEventListener('change', (e) => {
+        const krwOrderHelperEnabled = e.target.checked;
+        chrome.storage.local.set({ krwOrderHelperEnabled }, () => {
             reloadCurrentTab();
         });
     });
@@ -787,7 +810,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (namespace !== 'local') return;
 
         // Core Settings & Rate
-        const coreKeys = ['usdkrw', 'customRateValue', 'isEnabled', 'showBillionUnit', 'showTrillionUnit', 'decimalPlaces', 'rateSource', 'lastFetchTime', 'lastFetchStatus', 'lastFetchError', 'updateAvailable', 'updateLatestVersion', 'updateDownloadUrl'];
+        const coreKeys = ['usdkrw', 'customRateValue', 'isEnabled', 'binanceKoreanEnabled', 'krwOrderHelperEnabled', 'showBillionUnit', 'showTrillionUnit', 'decimalPlaces', 'rateSource', 'lastFetchTime', 'lastFetchStatus', 'lastFetchError', 'updateAvailable', 'updateLatestVersion', 'updateDownloadUrl'];
         if (coreKeys.some(key => changes[key])) {
             loadData();
         }

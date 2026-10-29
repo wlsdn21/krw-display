@@ -50,13 +50,21 @@ chrome.runtime.onInstalled.addListener(() => {
     // Set default preferences
     // Check and set default preferences only if they don't exist
     chrome.storage.local.get([
-        'isEnabled', 'showBillionUnit', 'decimalPlaces', 'rateSource', 'usdkrw', 'lastFetchTime'
+        'isEnabled', 'binanceKoreanEnabled', 'krwOrderHelperEnabled', 'showBillionUnit', 'decimalPlaces', 'rateSource', 'usdkrw', 'lastFetchTime'
     ], (result) => {
         const updates = {};
         let needsUpdate = false;
 
         if (result.isEnabled === undefined) {
             updates.isEnabled = true;
+            needsUpdate = true;
+        }
+        if (result.binanceKoreanEnabled === undefined) {
+            updates.binanceKoreanEnabled = true;
+            needsUpdate = true;
+        }
+        if (result.krwOrderHelperEnabled === undefined) {
+            updates.krwOrderHelperEnabled = true;
             needsUpdate = true;
         }
         if (result.showBillionUnit === undefined) {
@@ -120,6 +128,27 @@ chrome.alarms.onAlarm.addListener((alarm) => {
  * Handle manual refresh requests from popup
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "getAkp153KrwUsdtRate") {
+        fetchUpbitRate('KRW-USDT').then(rate => {
+            if (!Number.isFinite(rate) || rate < 500 || rate > 2500) {
+                throw new Error('Invalid KRW-USDT rate');
+            }
+            sendResponse({
+                success: true,
+                quote: {
+                    schema: 1,
+                    pair: 'KRW-USDT',
+                    krwPerUsdt: rate,
+                    fetchedAt: Date.now(),
+                    source: 'upbit_usdt_ticker'
+                }
+            });
+        }).catch(() => {
+            sendResponse({ success: false });
+        });
+        return true;
+    }
+
     if (request.action === "refreshRate") {
         fetchExchangeRate().then(rate => {
             sendResponse({ success: true, rate });
@@ -306,7 +335,7 @@ async function fetchMananaRate() {
 
 
 async function fetchUpbitRate(market) {
-    const response = await fetch(UPBIT_API);
+    const response = await fetch(UPBIT_API, { cache: 'no-store' });
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
     }

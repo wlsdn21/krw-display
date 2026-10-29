@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "원화표시기",
   "description": "웹상의 USD / USDT / USDC 가격을 실시간 원화(KRW)로 자연스럽게 병기",
-  "version": "1.3.7",
+  "version": "1.6.0",
   "content_scripts": [
     {
       "matches": [
@@ -11,6 +11,26 @@
       "js": [
         "logger.js",
         "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.binance.com/*"
+      ],
+      "js": [
+        "binance-ko-translations.js",
+        "binance-ko.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.binance.com/*/futures/*"
+      ],
+      "js": [
+        "binance-krw-order.js",
+        "binance-position-return.js"
       ],
       "run_at": "document_idle"
     }

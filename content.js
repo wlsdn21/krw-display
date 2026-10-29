@@ -357,7 +357,15 @@
       }
     }
 
-    processedNodes.forEach(node => processNode(node));
+    processedNodes.forEach(node => {
+      try {
+        processNode(node);
+      } catch (error) {
+        Logger.warn('content.js', 'Skipped a DOM node after a Binance rerender', {
+          message: error?.message || String(error)
+        });
+      }
+    });
     pendingMutations = [];
     rafScheduled = false;
   }
@@ -367,13 +375,23 @@
    */
   function forceUpdateDOM() {
 
+    if (!document.body) return;
+
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node;
     const nodes = [];
     while (node = walker.nextNode()) {
       nodes.push(node);
     }
-    nodes.forEach(processNode);
+    nodes.forEach(node => {
+      try {
+        processNode(node);
+      } catch (error) {
+        Logger.warn('content.js', 'Skipped a DOM node during full refresh', {
+          message: error?.message || String(error)
+        });
+      }
+    });
   }
 
 
@@ -440,6 +458,14 @@
   }
 
 
+
+  // Prime the default supported sites immediately. Chrome storage can answer
+  // a little later than Binance's first render; waiting for that callback can
+  // make the extension appear randomly missing after a refresh. The stored
+  // site settings are still authoritative and can stop this immediately.
+  if (DEFAULT_SITES.some(site => currentHostname.includes(site))) {
+    startExtension();
+  }
 
   // Check on load
   checkAndRun();
