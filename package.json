@@ -1,0 +1,13 @@
+{
+  "name": "krw-display",
+  "version": "1.6.1",
+  "private": true,
+  "description": "원화표시기 개발 및 회귀 검사",
+  "scripts": {
+    "test": "node --test tests/core.test.js tests/background.test.js && node test-binance-ko-translations.js",
+    "test:browser": "node --test tests/browser.test.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

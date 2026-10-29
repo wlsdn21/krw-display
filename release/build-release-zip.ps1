@@ -11,7 +11,7 @@ if (-not (Test-Path $manifestPath)) {
     throw "manifest.json not found at $manifestPath"
 }
 
-$manifestRaw = Get-Content $manifestPath -Raw
+$manifestRaw = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8
 $versionMatch = [regex]::Match($manifestRaw, '"version"\s*:\s*"([^"]+)"')
 if (-not $versionMatch.Success) {
     throw "Could not read version from manifest.json"
@@ -20,10 +20,16 @@ $version = $versionMatch.Groups[1].Value
 $zipName = "krw-master-pro-v$version.zip"
 $outputRoot = [System.IO.Path]::GetFullPath($OutputDir)
 $zipPath = Join-Path $outputRoot $zipName
-$stagingDir = Join-Path ([System.IO.Path]::GetTempPath()) ("krw-master-pro-" + [System.Guid]::NewGuid().ToString("N"))
+$tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+$stagingDir = [System.IO.Path]::GetFullPath((Join-Path $tempRoot ("krw-master-pro-" + [System.Guid]::NewGuid().ToString("N"))))
+if ([System.IO.Path]::GetDirectoryName($stagingDir).TrimEnd('\') -ne $tempRoot.TrimEnd('\') -or
+    -not [System.IO.Path]::GetFileName($stagingDir).StartsWith("krw-master-pro-")) {
+    throw "Release staging folder must be a direct child of the temporary folder"
+}
 
 $includeFiles = @(
     "manifest.json",
+    "shared.js",
     "background.js",
     "content.js",
     "binance-ko-translations.js",
@@ -67,7 +73,7 @@ try {
     }
 
     if (Test-Path $zipPath) {
-        Remove-Item $zipPath -Force
+        Remove-Item -LiteralPath $zipPath -Force
     }
 
     Compress-Archive -Path (Join-Path $stagingDir "*") -DestinationPath $zipPath -CompressionLevel Optimal
@@ -75,6 +81,6 @@ try {
 }
 finally {
     if (Test-Path $stagingDir) {
-        Remove-Item $stagingDir -Recurse -Force
+        Remove-Item -LiteralPath $stagingDir -Recurse -Force
     }
 }

@@ -5,14 +5,13 @@
   const PROXY_ATTR = "data-krw-unit-input";
   const HIDDEN_ATTR = "data-krw-unit-hidden";
   const STYLE_ID = "krw-unit-style";
-  const DEFAULT_RATE = 1300;
   const RATE_BRIDGE_VERSION = "1";
   const RATE_REQUEST_EVENT = "akp153-request-krw-rate";
   const RATE_UPDATED_EVENT = "akp153-krw-rate-updated";
 
-  let featureEnabled = true;
+  let featureEnabled = false;
   let krwMode = false;
-  let usdkrw = DEFAULT_RATE;
+  let usdkrw = null;
   let observer = null;
   let syncTimer = null;
   let currentTarget = null;
@@ -402,10 +401,9 @@
   }, true);
 
   function applySettings(settings = {}) {
-    featureEnabled = settings.krwOrderHelperEnabled !== false;
+    usdkrw = KrwCommon.isValidRate(settings.usdkrw) ? settings.usdkrw : null;
+    featureEnabled = settings.krwOrderHelperEnabled !== false && usdkrw !== null;
     krwMode = featureEnabled && settings.binanceKrwUnitMode === true;
-    const rate = Number(settings.usdkrw);
-    if (Number.isFinite(rate) && rate >= 500 && rate <= 2500) usdkrw = rate;
 
     if (!featureEnabled) removeProxy();
     if (!observer) {
@@ -426,10 +424,7 @@
     scheduleSyncBurst();
   }, 500);
 
-  // Apply safe defaults immediately. Storage can respond after Binance has
-  // already mounted the order form, which otherwise makes the KRW helper look
-  // randomly absent until another render occurs.
-  applySettings({});
+  // Wait for the saved rate before presenting an order input in KRW.
   const sharedSettings = ["krwOrderHelperEnabled", "binanceKrwUnitMode", "usdkrw"];
   chrome.storage.local.get(sharedSettings, applySettings);
   requestAkp153Rate();

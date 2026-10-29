@@ -6,18 +6,11 @@
   let isExtensionRunning = false; // Track extension state
   let obs = null; // MutationObserver instance
   let rafScheduled = false;
+  let pendingFrame = 0;
   let pendingMutations = [];
+  let settingsRevision = 0;
 
-  // Default sites
-  const DEFAULT_SITES = [
-    'hyperliquid.xyz',
-    'lighter.xyz',
-    'binance.com',
-    'okx.com',
-    'bitget.com',
-    'kucoin.com',
-    'bingx.com'
-  ];
+  const DEFAULT_SITES = KrwCommon.DEFAULT_SITES;
 
   // Settings State
   let isEnabled = true; // Logic enabled/disabled
@@ -56,8 +49,8 @@
 
     // Validate decimal places: must be 0-4
     if (validated.decimalPlaces !== undefined) {
-      const decPlaces = parseInt(validated.decimalPlaces);
-      if (isNaN(decPlaces) || decPlaces < 0 || decPlaces > 4) {
+      const decPlaces = Number(validated.decimalPlaces);
+      if (!Number.isInteger(decPlaces) || decPlaces < 0 || decPlaces > 4) {
         Logger.warn('content.js', `Invalid decimalPlaces: ${validated.decimalPlaces}, using default (2)`);
         validated.decimalPlaces = 2;
       } else {
@@ -65,20 +58,8 @@
       }
     }
 
-    // Validate exchange rates
-    const validateRate = (rate, name, defaultVal, min = 0, max = 10000) => {
-      if (rate !== undefined) {
-        const numRate = parseFloat(rate);
-        if (isNaN(numRate) || numRate < min || numRate > max) {
-          Logger.warn('content.js', `Invalid ${name}: ${rate}, using default (${defaultVal})`);
-          return defaultVal;
-        }
-        return numRate;
-      }
-      return undefined;
-    };
-
-    validated.usdkrw = validateRate(validated.usdkrw, 'usdkrw', 1300, 500, 2500);
+    validated.usdkrw = KrwCommon.isValidRate(validated.usdkrw) ? validated.usdkrw : undefined;
+    validated.decimalPlaces ??= 2;
 
     // Validate booleans
     const validateBool = (val, defaultVal) => {
@@ -101,11 +82,11 @@
     USD: {
       enabled: () => true, // USD is always enabled
       rate: () => CURRENCIES.USD._rate,
-      _rate: 1300,
+      _rate: null,
       patterns: [
-        { source: '(-?)\\$\\s?([\\d,]+(?:\.\\d+)?)\\s?([kKmMbBtT만억조](?:n|N)?)?(?:\\s*\\(₩[^)]+\\))?', flags: 'g', type: 'symbol' },
-        { source: '(-?)([\\d,]+(?:\.\\d+)?)\\s?([kKmMbBtT만억조](?:n|N)?)?\\s?(USD|USDT|USDC)(?![A-Za-z])(?:\\s*\\(₩[^)]+\\))?', flags: 'gi', type: 'suffix' },
-        { source: `(-?)([\\d,]+(?:\.\\d+)?)\\s?([만억조])?\\s?(달러)(?=${KOREAN_DOLLAR_POSTPOSITION_PATTERN}(?:[^A-Za-z가-힣]|$))(?:\\s*\\(₩[^)]+\\))?`, flags: 'g', type: 'korean' }
+        { source: '(-?)\\$\\s?(-?)([\\d,]+(?:\\.\\d+)?)\\s?([kKmMbBtT만억조](?:n|N)?)?(?:\\s*\\(₩[^)]+\\))?', flags: 'g', type: 'symbol' },
+        { source: '(-?)([\\d,]+(?:\\.\\d+)?)\\s?([kKmMbBtT만억조](?:n|N)?)?\\s?(USD|USDT|USDC)(?![A-Za-z])(?:\\s*\\(₩[^)]+\\))?', flags: 'gi', type: 'suffix' },
+        { source: `(-?)([\\d,]+(?:\\.\\d+)?)\\s?([만억조])?\\s?(달러)(?=${KOREAN_DOLLAR_POSTPOSITION_PATTERN}(?:[^A-Za-z가-힣]|$))(?:\\s*\\(₩[^)]+\\))?`, flags: 'g', type: 'korean' }
       ]
     }
   };
@@ -121,17 +102,18 @@
    * Load settings from Chrome storage and update currency configuration
    */
   function loadSettings() {
+    const revision = ++settingsRevision;
     chrome.storage.local.get([
       'usdkrw',
-      'isEnabled', 'showBillionUnit', 'showTrillionUnit', 'decimalPlaces'
+      'isEnabled', 'showBillionUnit', 'showTrillionUnit', 'decimalPlaces',
+      'applyToAllSites', 'enabledSites'
     ], (rawSettings) => {
+      if (revision !== settingsRevision) return;
       // Validate settings before applying
       const settings = validateSettings(rawSettings);
 
       // Update exchange rates (already validated)
-      if (settings.usdkrw !== undefined) {
-        CURRENCIES.USD._rate = settings.usdkrw;
-      }
+      CURRENCIES.USD._rate = settings.usdkrw ?? null;
 
       // Update global settings (already validated)
       isEnabled = settings.isEnabled;
@@ -139,9 +121,13 @@
       showTrillionUnit = settings.showTrillionUnit;
       decimalPlaces = settings.decimalPlaces;
 
-      // If running, update DOM immediately with new settings
-      if (isExtensionRunning) {
+      const sites = Array.isArray(rawSettings.enabledSites) ? rawSettings.enabledSites : DEFAULT_SITES;
+      const allowed = rawSettings.applyToAllSites === true || sites.some(site => KrwCommon.matchesSite(currentHostname, site));
+      if (allowed && isEnabled && KrwCommon.isValidRate(CURRENCIES.USD._rate)) {
+        startExtension();
         forceUpdateDOM();
+      } else {
+        stopExtension();
       }
     });
   }
@@ -178,12 +164,12 @@
    */
   function convertToKRW(match, sign, numStr, unit) {
     let num = parseFloat(numStr.replace(/,/g, ""));
-    if (isNaN(num)) return match;
+    if (!Number.isFinite(num)) return match;
 
     // Apply unit multipliers
     const u = unit ? unit.toLowerCase().trim() : "";
     // English units
-    if (u === "k") num *= 1e3;
+    if (u === "k" || u === "kn") num *= 1e3;
     else if (u === "m" || u === "mn") num *= 1e6;
     else if (u === "b" || u === "bn") num *= 1e9;
     else if (u === "t" || u === "tn") num *= 1e12;
@@ -195,6 +181,7 @@
     const amount = num * (sign.includes("-") ? -1 : 1);
 
     const krw = amount * CURRENCIES.USD.rate();
+    if (!Number.isFinite(krw)) return match;
     const krwStr = formatKRW(krw);
 
     return `${match} (₩${krwStr})`;
@@ -219,7 +206,10 @@
         // ✅ 매 호출마다 새 RegExp 인스턴스 생성 → lastIndex 재사용 버그 완전 방지
         const regex = new RegExp(patternConfig.source, patternConfig.flags);
 
-        result = result.replace(regex, (match, sign, numStr, unit) => {
+        result = result.replace(regex, (match, ...groups) => {
+          const [sign, numStr, unit] = patternConfig.type === 'symbol'
+            ? [groups[0] || groups[1], groups[2], groups[3]]
+            : groups;
           if (!isEnabled) {
             // Remove existing KRW annotation when disabled
             return match.replace(/\s*\(₩[^)]+\)$/, '');
@@ -236,15 +226,9 @@
     return result;
   }
 
-  // Cache for editable elements to improve performance
-  // ❓ 가이드: WeakSet 영구 캐시를 제거함
-  // SPA에서는 contenteditable이 동적으로 추가/제거되므로
-  // 한번 캐시된 노드가 에디터에서 사용 후 일반 DOM으로 변해도
-  // 영구적으로 isEditable = true로 남아 변환에서 제외됨.
-  // 해결: 매 호출마다 실시간 DOM 체크로 대체.
-
-  // ✅ extension이 직접 수정한 텍스트 노드를 추적 → characterData 뮤테이션에서 자기 자신의 변경을 무시
-  const extensionModifiedNodes = new WeakSet();
+  // Weak references preserve original text without retaining detached page nodes.
+  const extensionModifiedNodes = new WeakMap();
+  const annotations = new WeakMap();
 
   /**
    * Check if a node is inside an editable element
@@ -253,6 +237,7 @@
    */
   const isInEditableElement = (node) => {
     let parent = node.parentElement;
+    if (parent?.closest('script, style, noscript, template, select, option, code, pre, svg, math, [translate="no"]')) return true;
     let depth = 0;
 
     while (parent && depth < CONFIG.DOM.MAX_PARENT_DEPTH) {
@@ -299,7 +284,10 @@
    */
   const processNode = (node) => {
     if (node.nodeType === 3) {
-      const original = node.nodeValue;
+      if (!node.isConnected) return;
+      const current = node.nodeValue;
+      const saved = annotations.get(node);
+      const original = saved && current === saved.converted ? saved.original : current;
       if (!original) return;
 
       if (original.length > CONFIG.DOM.MAX_TEXT_LENGTH) {
@@ -314,9 +302,9 @@
       }
 
       const transformed = transform(original);
-      if (original !== transformed) {
-        // ✅ 수정 전에 이 노드를 "extension이 수정함"으로 표시
-        extensionModifiedNodes.add(node);
+      if (current !== transformed) {
+        annotations.set(node, { original, converted: transformed });
+        extensionModifiedNodes.set(node, transformed);
         node.nodeValue = transformed;
       }
     }
@@ -329,6 +317,7 @@
     if (!isExtensionRunning) {
       pendingMutations = [];
       rafScheduled = false;
+      pendingFrame = 0;
       return;
     }
 
@@ -337,10 +326,11 @@
     for (const mutation of pendingMutations) {
       if (mutation.type === "characterData") {
         // ✅ extension이 직접 수정한 노드의 characterData 변경은 무시 (자기 자신의 이벤트)
-        if (extensionModifiedNodes.has(mutation.target)) {
+        if (extensionModifiedNodes.get(mutation.target) === mutation.target.nodeValue) {
           extensionModifiedNodes.delete(mutation.target);
           continue;
         }
+        extensionModifiedNodes.delete(mutation.target);
         processedNodes.add(mutation.target);
       } else if (mutation.type === "childList") {
         mutation.addedNodes.forEach(node => {
@@ -368,6 +358,7 @@
     });
     pendingMutations = [];
     rafScheduled = false;
+    pendingFrame = 0;
   }
 
   /**
@@ -401,16 +392,13 @@
 
     isExtensionRunning = true;
 
-    // Load settings first
-    loadSettings();
-
     // Init Observer
     obs = new MutationObserver(mutations => {
       if (!isEnabled) return;
-      pendingMutations.push(...mutations);
+      for (const mutation of mutations) pendingMutations.push(mutation);
       if (!rafScheduled) {
         rafScheduled = true;
-        requestAnimationFrame(processPendingMutations);
+        pendingFrame = requestAnimationFrame(processPendingMutations);
       }
     });
 
@@ -419,74 +407,38 @@
       forceUpdateDOM(); // Initial scan
     } else {
       document.addEventListener('DOMContentLoaded', () => {
+        if (!isExtensionRunning || !obs || !document.body) return;
         obs.observe(document.body, { subtree: true, childList: true, characterData: true });
-        forceUpdateDOM(); // Initial scan
-      });
+        forceUpdateDOM();
+      }, { once: true });
     }
   }
 
   function stopExtension() {
-    if (!isExtensionRunning) return;
-
     isExtensionRunning = false;
-    if (obs) {
-      obs.disconnect();
-      obs = null;
-    }
+    if (obs) obs.disconnect();
+    obs = null;
+    if (pendingFrame) cancelAnimationFrame(pendingFrame);
+    pendingFrame = 0;
+    rafScheduled = false;
     pendingMutations = [];
-  }
-
-
-
-  function checkAndRun() {
-    chrome.storage.local.get(['applyToAllSites', 'enabledSites'], (result) => {
-      const applyToAllSites = result.applyToAllSites || false;
-
-      if (applyToAllSites) {
-        startExtension();
-      } else {
-        const enabledSites = result.enabledSites || DEFAULT_SITES;
-        const isWhitelisted = enabledSites.some(site => currentHostname.includes(site));
-
-        if (isWhitelisted) {
-          startExtension();
-        } else {
-          stopExtension();
-        }
-      }
-    });
-  }
-
-
-
-  // Prime the default supported sites immediately. Chrome storage can answer
-  // a little later than Binance's first render; waiting for that callback can
-  // make the extension appear randomly missing after a refresh. The stored
-  // site settings are still authoritative and can stop this immediately.
-  if (DEFAULT_SITES.some(site => currentHostname.includes(site))) {
-    startExtension();
-  }
-
-  // Check on load
-  checkAndRun();
-
-  // Check on settings change (Global listener)
-  chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local') {
-      // Activation Logic Changes
-      if (changes.applyToAllSites || changes.enabledSites) {
-        // Re-evaluate if we should run
-        checkAndRun();
-      }
-
-      // Settings Changes (only if running)
-        if (isExtensionRunning) {
-        if (changes.isEnabled || changes.showBillionUnit || changes.showTrillionUnit || changes.decimalPlaces ||
-          changes.usdkrw) {
-          loadSettings(); // Reloads and triggers forceUpdateDOM
-        }
-      }
+    if (!document.body) return;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const saved = annotations.get(node);
+      if (saved && node.nodeValue === saved.converted) node.nodeValue = saved.original;
+      annotations.delete(node);
+      extensionModifiedNodes.delete(node);
     }
+  }
+
+  // Stored preferences are authoritative, including on the first page render.
+  loadSettings();
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    const keys = ['applyToAllSites', 'enabledSites', 'isEnabled', 'showBillionUnit',
+      'showTrillionUnit', 'decimalPlaces', 'usdkrw'];
+    if (namespace === 'local' && keys.some(key => changes[key])) loadSettings();
   });
 
   // Listen for messages from popup to reload settings
